@@ -170,11 +170,11 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 If you use this tool in your research, please cite:
 
 ```bibtex
-@software{conflibert2024,
-  title = {ConfliBERT: A BERT-based Model for Conflict and Political Event Analysis},
-  author = {Alsarra, Sultan and Meher, Shreyas},
-  year = {2024},
-  publisher = {UTD Event Data},
-  url = {https://eventdata.utdallas.edu/conflibert/}
+@inproceedings{hu2022conflibert,
+  title={ConfliBERT: A Pre-trained Language Model for Political Conflict and Violence},
+  author={Hu, Yibo and Hosseini, MohammadSaleh and Parolin, Erick Skorupa and Osorio, Javier and Khan, Latifur and Brandt, Patrick and D’Orazio, Vito},
+  booktitle={Proceedings of the 2022 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies},
+  pages={5469--5482},
+  year={2022}
 }
 ```

@@ -425,164 +425,13 @@ def chatbot(task, text=None, context=None, question=None, file=None):
         return "Please select a valid task."
 
 
-css = """
-:root {
-    --primary-color: #2563eb;
-    --secondary-color: #1e40af;
-    --accent-color: #3b82f6;
-    --background-color: #f8fafc;
-    --card-background: #ffffff;
-    --text-color: #1e293b;
-    --border-color: #e2e8f0;
-}
-
-body {
-    background-color: var(--background-color);
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    color: var(--text-color);
-}
-
-.gradio-container {
-    max-width: 1200px !important;
-    margin: 2rem auto !important;
-    padding: 0 1rem;
-}
-
-.header-container {
-    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
-    padding: 2rem 1rem;
-    margin: -1rem -1rem 2rem -1rem;
-    border-radius: 1rem;
-    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-}
-
-.header-title-center a {
-    font-size: 2.5rem !important;
-    font-weight: 800;
-    color: white !important;
-    text-align: center;
-    display: block;
-    text-decoration: none;
-    letter-spacing: -0.025em;
-    margin-bottom: 0.5rem;
-}
-
-.task-container {
-    background: var(--card-background);
-    padding: 2rem;
-    border-radius: 1rem;
-    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-    margin-bottom: 2rem;
-}
-
-.gr-input, .gr-box {
-    border: 1px solid var(--border-color) !important;
-    border-radius: 0.75rem !important;
-    padding: 1rem !important;
-    background: var(--card-background) !important;
-    transition: border-color 0.15s ease;
-}
-
-.gr-input:focus, .gr-box:focus {
-    border-color: var(--accent-color) !important;
-    outline: none !important;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1) !important;
-}
-
-.gr-button {
-    background: var(--primary-color) !important;
-    border: none;
-    padding: 0.75rem 1.5rem !important;
-    font-weight: 600 !important;
-    border-radius: 0.75rem !important;
-    cursor: pointer;
-    transition: all 0.15s ease;
-}
-
-.gr-button:hover {
-    background: var(--secondary-color) !important;
-    transform: translateY(-1px);
-}
-
-.gr-button:active {
-    transform: translateY(0);
-}
-
-select.gr-box {
-    cursor: pointer;
-    padding-right: 2.5rem !important;
-    appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23475569'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 1rem center;
-    background-size: 1.5em 1.5em;
-}
-
-.footer {
-    text-align: center;
-    margin-top: 2rem;
-    padding: 2rem 0;
-    border-top: 1px solid var(--border-color);
-    color: #64748b;
-}
-
-.footer a {
-    color: var(--primary-color);
-    font-weight: 500;
-    text-decoration: none;
-    transition: color 0.15s ease;
-}
-
-.footer a:hover {
-    color: var(--secondary-color);
-}
-
-/* File upload styles */
-.gr-file-drop {
-    border: 2px dashed var(--border-color) !important;
-    border-radius: 0.75rem !important;
-    padding: 2rem !important;
-    text-align: center;
-    transition: all 0.15s ease;
-}
-
-.gr-file-drop:hover {
-    border-color: var(--accent-color) !important;
-    background-color: rgba(59, 130, 246, 0.05) !important;
-}
-
-/* Output container */
-.output-html {
-    background: var(--card-background);
-    padding: 1.5rem;
-    border-radius: 0.75rem;
-    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
-}
-
-/* Labels */
-label {
-    font-weight: 500;
-    margin-bottom: 0.5rem;
-    color: #475569;
-}
-
-/* Spacing between elements */
-.gr-form {
-    gap: 1.5rem !important;
-}
-
-.gr-row {
-    gap: 1rem !important;
-}
-"""
-
-with gr.Blocks(css=css) as demo:
+with gr.Blocks(theme="ParityError/Interstellar") as demo:
     with gr.Column():
         with gr.Row(elem_id="header", elem_classes="header-container"):
-            gr.Markdown("<div class='header-title-center'><a href='https://eventdata.utdallas.edu/conflibert/'>ConfliBERT</a></div>")
+            gr.Markdown("<div class='header-title-center'><a href='https://eventdata.utdallas.edu/conflibert/' style='font-size: 4rem; font-weight: 900;'>ConfliBERT</a></div>")
         
         with gr.Column(elem_classes="task-container"):
-            gr.Markdown("<h2 style='font-size: 1.25rem; font-weight: 600; margin-bottom: 1.5rem; color: #0f172a;'>Select a task and provide the necessary inputs:</h2>")
+            gr.Markdown("<h2 style='font-size: 1.25rem; font-weight: 600; margin-bottom: 1.5rem;'>Select a task and provide the necessary inputs:</h2>")
             
             task = gr.Dropdown(
                 choices=["Question Answering", "Named Entity Recognition", "Text Classification", "Multilabel Classification"],
@@ -637,7 +486,6 @@ with gr.Blocks(css=css) as demo:
         gr.Markdown("<a href='https://eventdata.utdallas.edu/'>UTD Event Data</a> | <a href='https://www.utdallas.edu/'>University of Texas at Dallas</a>")
         gr.Markdown("Developed By: <a href='https://www.linkedin.com/in/sultan-alsarra-phd-56977a63/' target='_blank'>Sultan Alsarra</a> and <a href='http://shreyasmeher.com' target='_blank'>Shreyas Meher</a>")
 
-    # Define the update_inputs function
     def update_inputs(task_name):
         """Updates the visibility of input components based on the selected task."""
         if task_name == "Question Answering":
@@ -657,7 +505,6 @@ with gr.Blocks(css=css) as demo:
                 gr.update(visible=True)
             ]
 
-    # Define the chatbot_interface function
     def chatbot_interface(task, text, context, question, file):
         """Handles both file and text inputs for different tasks."""
         if file:
@@ -669,7 +516,6 @@ with gr.Blocks(css=css) as demo:
             result = chatbot(task, text, context, question)
             return gr.update(value=result, visible=True), gr.update(visible=False)
 
-    # Define the main chatbot function
     def chatbot(task, text=None, context=None, question=None, file=None):
         """Main function to process different types of inputs and tasks."""
         if file is not None:  # Handle CSV file input
@@ -706,7 +552,6 @@ with gr.Blocks(css=css) as demo:
         else:
             return "Please select a valid task."
 
-    # Event handlers
     task.change(fn=update_inputs, inputs=task, outputs=[text_input, context_input, question_input, file_input, file_output])
     submit_button.click(
         fn=chatbot_interface,

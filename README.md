@@ -28,7 +28,7 @@ A web-based interface for ConfliBERT, a BERT-based model specialized in conflict
 1. Clone the repository:
 ```bash
 git clone https://github.com/shreyasmeher/conflibert-gui.git
-cd conflibert-demo
+cd conflibert-gui
 ```
 
 2. Create and activate a virtual environment:

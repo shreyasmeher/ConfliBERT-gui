@@ -425,7 +425,7 @@ def chatbot(task, text=None, context=None, question=None, file=None):
         return "Please select a valid task."
 
 
-with gr.Blocks(theme="ParityError/Interstellar") as demo:
+with gr.Blocks(theme="allenai/gradio-theme") as demo:
     with gr.Column():
         with gr.Row(elem_id="header", elem_classes="header-container"):
             gr.Markdown("<div class='header-title-center'><a href='https://eventdata.utdallas.edu/conflibert/' style='font-size: 4rem; font-weight: 900;'>ConfliBERT</a></div>")

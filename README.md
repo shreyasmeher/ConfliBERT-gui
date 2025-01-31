@@ -25,7 +25,7 @@ A web-based interface for ConfliBERT, a BERT-based model specialized in conflict
 
 ## Installation
 
-1. Clone the repository:
+1. Clone the repository to a local directory (do not clone to cloud storage, venv installs will be very slow if you do): 
 ```bash
 git clone https://github.com/shreyasmeher/conflibert-gui.git
 cd conflibert-gui

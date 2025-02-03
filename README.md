@@ -25,19 +25,30 @@ A web-based interface for ConfliBERT, a BERT-based model specialized in conflict
 
 ## Installation
 
-1. Clone the repository to a local directory (do not clone to cloud storage, venv installs will be very slow if you do): 
+1. Clone the repository to a local directory:
 ```bash
-git clone https://github.com/shreyasmeher/conflibert-gui.git
+git clone https://github.com/shreyasmeyer/conflibert-gui.git
 cd conflibert-gui
 ```
 
-2. Create and activate a virtual environment:
+2. Create and activate virtual environment:
 ```bash
+# Create environment
 python -m venv env
-source env/bin/activate  # On Windows, use: env\Scripts\activate
+
+# Activate environment
+# On Windows:
+env\Scripts\activate
+# On Mac/Linux:
+source env/bin/activate
 ```
 
-3. Install required packages:
+3. For Windows users, if you get permission errors, run PowerShell as Administrator and execute:
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope LocalMachine
+```
+
+4. Install requirements:
 ```bash
 pip install -r requirements.txt
 ```

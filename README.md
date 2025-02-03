@@ -65,7 +65,7 @@ env\Scripts\activate
 source env/bin/activate
 ```
 
-5. For Windows users with permission errors, run PowerShell as Administrator:
+5. For Windows users with permission errors, [run PowerShell as Administrator](https://www.javatpoint.com/powershell-run-as-administrator):
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope LocalMachine
 ```

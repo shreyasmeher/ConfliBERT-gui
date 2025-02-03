@@ -25,7 +25,7 @@ A web-based interface for ConfliBERT, a BERT-based model specialized in conflict
 
 ## Installation
 
-# Requirements
+### Requirements
 
 **Required:**
 - Python 3.8+
@@ -36,7 +36,7 @@ A web-based interface for ConfliBERT, a BERT-based model specialized in conflict
 - PowerShell 5.0+ (Windows)
 - Terminal (Mac)
 
-# Installation Steps
+### Installation Steps
 
 1. Install Python:
    - Download from [python.org](https://www.python.org/downloads/)
@@ -75,7 +75,7 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope LocalMachine
 pip install -r requirements.txt
 ```
 
-### Requirements
+### Package Requirements
 
 - Python 3.8+
 - PyTorch

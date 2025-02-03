@@ -25,13 +25,35 @@ A web-based interface for ConfliBERT, a BERT-based model specialized in conflict
 
 ## Installation
 
-1. Clone the repository to a local directory:
+# Requirements
+
+**Required:**
+- Python 3.8+
+- Git
+- Code editor (VS Code recommended)
+
+**Optional but recommended:**
+- PowerShell 5.0+ (Windows)
+- Terminal (Mac)
+
+# Installation Steps
+
+1. Install Python:
+   - Download from [python.org](https://www.python.org/downloads/)
+   - Check installation: `python --version`
+
+2. Install Git:
+   - Windows: Download from [git-scm.com](https://git-scm.com/downloads)
+   - Mac: `brew install git` or download from [git-scm.com](https://git-scm.com/downloads)
+   - Check installation: `git --version`
+
+3. Clone repository:
 ```bash
 git clone https://github.com/shreyasmeyer/conflibert-gui.git
 cd conflibert-gui
 ```
 
-2. Create and activate virtual environment:
+4. Create and activate virtual environment:
 ```bash
 # Create environment
 python -m venv env
@@ -43,12 +65,12 @@ env\Scripts\activate
 source env/bin/activate
 ```
 
-3. For Windows users, if you get permission errors, run PowerShell as Administrator and execute:
+5. For Windows users with permission errors, run PowerShell as Administrator:
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope LocalMachine
 ```
 
-4. Install requirements:
+6. Install requirements:
 ```bash
 pip install -r requirements.txt
 ```

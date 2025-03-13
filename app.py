@@ -6,6 +6,9 @@ import gradio as gr
 import re
 import pandas as pd
 import io
+import os
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+import keras
 
 # Check if GPU is available and use it if possible
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

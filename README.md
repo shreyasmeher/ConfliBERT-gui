@@ -49,7 +49,7 @@ A web-based interface for [ConfliBERT](https://github.com/eventdata/ConfliBERT),
 
 3. Clone repository:
 ```bash
-git clone https://github.com/shreyasmeyer/conflibert-gui.git
+git clone https://github.com/shreyasmeher/conflibert-gui.git
 cd conflibert-gui
 ```
 

@@ -1,3 +1,5 @@
+![ConfliBERT GUI](./gui.png)
+
 # ConfliBERT GUI Application
 
 A web-based interface for [ConfliBERT](https://github.com/eventdata/ConfliBERT), a BERT-based model specialized in conflict and political event analysis. This application provides multiple Natural Language Processing capabilities including Named Entity Recognition (NER), Text Classification, Multi-label Classification, and Question Answering.
@@ -211,3 +213,4 @@ If you use this tool in your research, please cite:
   year={2022}
 }
 ```
+

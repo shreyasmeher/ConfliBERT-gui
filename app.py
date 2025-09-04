@@ -428,7 +428,299 @@ def chatbot(task, text=None, context=None, question=None, file=None):
         return "Please select a valid task."
 
 
-with gr.Blocks(theme="allenai/gradio-theme") as demo:
+# Custom CSS for modern orange theme
+custom_css = """
+/* CSS Variables for Light and Dark Theme */
+:root {
+    --primary-orange: #ff6b35;
+    --primary-orange-light: #ff8c5a;
+    --primary-orange-dark: #e55a2b;
+    --secondary-orange: #ffa366;
+    --accent-orange: #ff9f40;
+    --background-light: #fefefe;
+    --background-dark: #1a1a1a;
+    --surface-light: #ffffff;
+    --surface-dark: #2d2d2d;
+    --text-primary-light: #2c2c2c;
+    --text-primary-dark: #ffffff;
+    --text-secondary-light: #666666;
+    --text-secondary-dark: #cccccc;
+    --border-light: #e0e0e0;
+    --border-dark: #404040;
+    --shadow-light: rgba(0, 0, 0, 0.1);
+    --shadow-dark: rgba(0, 0, 0, 0.3);
+    --gradient-orange: linear-gradient(135deg, #ff6b35 0%, #ff9f40 100%);
+    --gradient-orange-subtle: linear-gradient(135deg, rgba(255, 107, 53, 0.1) 0%, rgba(255, 159, 64, 0.1) 100%);
+}
+
+/* Dark theme overrides */
+.dark {
+    --background: var(--background-dark);
+    --surface: var(--surface-dark);
+    --text-primary: var(--text-primary-dark);
+    --text-secondary: var(--text-secondary-dark);
+    --border: var(--border-dark);
+    --shadow: var(--shadow-dark);
+}
+
+/* Light theme (default) */
+.light, :root {
+    --background: var(--background-light);
+    --surface: var(--surface-light);
+    --text-primary: var(--text-primary-light);
+    --text-secondary: var(--text-secondary-light);
+    --border: var(--border-light);
+    --shadow: var(--shadow-light);
+}
+
+/* Global Styles */
+* {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Main Container */
+.gradio-container {
+    background: var(--background) !important;
+    color: var(--text-primary) !important;
+    min-height: 100vh;
+}
+
+/* Header Styling */
+.header-container {
+    background: var(--gradient-orange) !important;
+    padding: 2rem 1rem !important;
+    margin: -1rem -1rem 2rem -1rem !important;
+    border-radius: 0 0 24px 24px !important;
+    box-shadow: 0 8px 32px var(--shadow) !important;
+    position: relative;
+    overflow: hidden;
+}
+
+.header-container::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.05'%3E%3Ccircle cx='30' cy='30' r='2'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E") !important;
+    pointer-events: none;
+}
+
+.header-title-center {
+    text-align: center !important;
+    position: relative;
+    z-index: 1;
+}
+
+.header-title-center a {
+    color: white !important;
+    text-decoration: none !important;
+    font-weight: 900 !important;
+    font-size: 4rem !important;
+    text-shadow: 0 4px 8px rgba(0, 0, 0, 0.2) !important;
+    letter-spacing: -0.02em !important;
+    transition: all 0.3s ease !important;
+}
+
+.header-title-center a:hover {
+    transform: translateY(-2px) !important;
+    text-shadow: 0 6px 16px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* Task Container */
+.task-container {
+    background: var(--surface) !important;
+    border-radius: 16px !important;
+    padding: 2rem !important;
+    box-shadow: 0 4px 24px var(--shadow) !important;
+    border: 1px solid var(--border) !important;
+    margin-bottom: 2rem !important;
+}
+
+/* Input Components */
+.input-text textarea, .input-text input {
+    background: var(--surface) !important;
+    border: 2px solid var(--border) !important;
+    border-radius: 12px !important;
+    padding: 1rem !important;
+    color: var(--text-primary) !important;
+    font-size: 0.95rem !important;
+    line-height: 1.5 !important;
+    transition: all 0.3s ease !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
+}
+
+.input-text textarea:focus, .input-text input:focus {
+    border-color: var(--primary-orange) !important;
+    box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.1) !important;
+    outline: none !important;
+    transform: translateY(-1px) !important;
+}
+
+/* Dropdown Styling */
+.gr-dropdown {
+    background: var(--surface) !important;
+    border: 2px solid var(--border) !important;
+    border-radius: 12px !important;
+    color: var(--text-primary) !important;
+    transition: all 0.3s ease !important;
+}
+
+.gr-dropdown:focus-within {
+    border-color: var(--primary-orange) !important;
+    box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.1) !important;
+}
+
+/* Button Styling */
+.submit-btn {
+    background: var(--gradient-orange) !important;
+    border: none !important;
+    border-radius: 12px !important;
+    padding: 1rem 2rem !important;
+    color: white !important;
+    font-weight: 600 !important;
+    font-size: 1rem !important;
+    cursor: pointer !important;
+    transition: all 0.3s ease !important;
+    box-shadow: 0 4px 16px rgba(255, 107, 53, 0.3) !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
+}
+
+.submit-btn:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 6px 24px rgba(255, 107, 53, 0.4) !important;
+    background: linear-gradient(135deg, #ff8c5a 0%, #ffb366 100%) !important;
+}
+
+.submit-btn:active {
+    transform: translateY(0) !important;
+    box-shadow: 0 2px 8px rgba(255, 107, 53, 0.3) !important;
+}
+
+/* File Upload Styling */
+.file-upload {
+    background: var(--gradient-orange-subtle) !important;
+    border: 2px dashed var(--primary-orange) !important;
+    border-radius: 12px !important;
+    padding: 1.5rem !important;
+    text-align: center !important;
+    transition: all 0.3s ease !important;
+}
+
+.file-upload:hover {
+    background: rgba(255, 107, 53, 0.15) !important;
+    border-color: var(--primary-orange-dark) !important;
+}
+
+/* Output Styling */
+.output-html {
+    background: var(--surface) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 12px !important;
+    padding: 1.5rem !important;
+    margin-top: 1rem !important;
+    box-shadow: 0 2px 12px var(--shadow) !important;
+    min-height: 100px !important;
+}
+
+.output-html div {
+    color: var(--text-primary) !important;
+    line-height: 1.6 !important;
+}
+
+/* Labels */
+label {
+    color: var(--text-primary) !important;
+    font-weight: 600 !important;
+    font-size: 0.9rem !important;
+    margin-bottom: 0.5rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
+}
+
+/* Footer */
+.footer {
+    background: var(--surface) !important;
+    border-top: 1px solid var(--border) !important;
+    padding: 1.5rem !important;
+    margin-top: 2rem !important;
+    text-align: center !important;
+    border-radius: 16px 16px 0 0 !important;
+}
+
+.footer a {
+    color: var(--primary-orange) !important;
+    text-decoration: none !important;
+    font-weight: 500 !important;
+    transition: color 0.3s ease !important;
+}
+
+.footer a:hover {
+    color: var(--primary-orange-dark) !important;
+    text-decoration: underline !important;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .header-title-center a {
+        font-size: 2.5rem !important;
+    }
+    
+    .task-container {
+        padding: 1.5rem !important;
+        margin: 1rem !important;
+    }
+    
+    .header-container {
+        padding: 1.5rem 1rem !important;
+        margin: -1rem -1rem 1rem -1rem !important;
+    }
+}
+
+/* Enhanced NER Output Styling */
+.output-html span[style*="color: blue"] { color: #3b82f6 !important; }
+.output-html span[style*="color: red"] { color: #ef4444 !important; }
+.output-html span[style*="color: green"] { color: #10b981 !important; }
+.output-html span[style*="color: orange"] { color: var(--primary-orange) !important; }
+.output-html span[style*="color: purple"] { color: #8b5cf6 !important; }
+.output-html span[style*="color: cyan"] { color: #06b6d4 !important; }
+.output-html span[style*="color: magenta"] { color: #ec4899 !important; }
+.output-html span[style*="color: brown"] { color: #92400e !important; }
+.output-html span[style*="color: yellow"] { color: #f59e0b !important; }
+.output-html span[style*="color: pink"] { color: #f472b6 !important; }
+
+/* Dark mode specific adjustments */
+@media (prefers-color-scheme: dark) {
+    .gradio-container {
+        background: var(--background-dark) !important;
+        color: var(--text-primary-dark) !important;
+    }
+    
+    .task-container, .output-html {
+        background: var(--surface-dark) !important;
+        border-color: var(--border-dark) !important;
+    }
+    
+    .input-text textarea, .input-text input, .gr-dropdown {
+        background: var(--surface-dark) !important;
+        border-color: var(--border-dark) !important;
+        color: var(--text-primary-dark) !important;
+    }
+    
+    label {
+        color: var(--text-primary-dark) !important;
+    }
+}
+
+/* Smooth transitions for theme switching */
+* {
+    transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease !important;
+}
+"""
+
+with gr.Blocks(theme="allenai/gradio-theme", css=custom_css) as demo:
     with gr.Column():
         with gr.Row(elem_id="header", elem_classes="header-container"):
             gr.Markdown("<div class='header-title-center'><a href='https://eventdata.utdallas.edu/conflibert/' style='font-size: 4rem; font-weight: 900;'>ConfliBERT</a></div>")

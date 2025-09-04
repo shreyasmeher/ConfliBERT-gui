@@ -558,6 +558,27 @@ custom_css = """
     transform: translateY(-1px) !important;
 }
 
+/* Placeholder text styling */
+.input-text textarea::placeholder, .input-text input::placeholder {
+    color: var(--text-secondary) !important;
+    opacity: 0.7 !important;
+}
+
+.input-text textarea::-webkit-input-placeholder, .input-text input::-webkit-input-placeholder {
+    color: var(--text-secondary) !important;
+    opacity: 0.7 !important;
+}
+
+.input-text textarea::-moz-placeholder, .input-text input::-moz-placeholder {
+    color: var(--text-secondary) !important;
+    opacity: 0.7 !important;
+}
+
+.input-text textarea:-ms-input-placeholder, .input-text input:-ms-input-placeholder {
+    color: var(--text-secondary) !important;
+    opacity: 0.7 !important;
+}
+
 /* Dropdown Styling */
 .gr-dropdown {
     background: var(--surface) !important;

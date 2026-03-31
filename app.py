@@ -68,7 +68,7 @@ def get_system_info():
     # Device
     if device.type == 'cuda':
         gpu_name = torch.cuda.get_device_name(0)
-        vram = torch.cuda.get_device_properties(0).total_mem / (1024 ** 3)
+        vram = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
         lines.append(f"GPU: {gpu_name} ({vram:.1f} GB VRAM)")
         lines.append("FP16 training: supported")
     elif device.type == 'mps':

@@ -2,8 +2,6 @@
 
 [ConfliBERT](https://github.com/eventdata/ConfliBERT) is a pretrained language model built specifically for analyzing conflict and political violence text. This application provides a browser-based interface for running inference with ConfliBERT's pretrained models, fine-tuning custom classifiers on your own data, and comparing model performance across architectures.
 
-Developed by [Shreyas Meher](http://shreyasmeher.com).
-
 ## Screenshots
 
 ### Home

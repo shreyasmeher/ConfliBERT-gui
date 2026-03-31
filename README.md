@@ -107,7 +107,17 @@ On Windows, if you get a permission error, run PowerShell as Administrator and e
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope LocalMachine
 ```
 
-3. Install dependencies:
+3. Install PyTorch:
+
+```bash
+# CPU only (Mac, or no NVIDIA GPU):
+pip install torch
+
+# NVIDIA GPU (Windows/Linux):
+pip install torch --index-url https://download.pytorch.org/whl/cu124
+```
+
+4. Install remaining dependencies:
 
 ```bash
 pip install -r requirements.txt

@@ -3,3 +3,7 @@ tensorflow
 transformers
 gradio
 tf-keras
+accelerate
+scikit-learn
+pandas
+plotly

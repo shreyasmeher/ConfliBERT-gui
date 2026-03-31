@@ -7,19 +7,26 @@ import os
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
 import torch
-import tensorflow as tf
-import tf_keras  # noqa: F401 - needed for TF model loading
-import keras     # noqa: F401 - needed for TF model loading
 from transformers import (
     AutoTokenizer,
     AutoModelForSequenceClassification,
     AutoModelForTokenClassification,
-    TFAutoModelForQuestionAnswering,
     TrainingArguments,
     Trainer,
     EarlyStoppingCallback,
     TrainerCallback,
 )
+
+# QA model uses TensorFlow (transformers <5) or PyTorch fallback (transformers >=5)
+_USE_TF_QA = False
+try:
+    import tensorflow as tf
+    import tf_keras   # noqa: F401
+    import keras      # noqa: F401
+    from transformers import TFAutoModelForQuestionAnswering
+    _USE_TF_QA = True
+except (ImportError, ModuleNotFoundError):
+    from transformers import AutoModelForQuestionAnswering
 import gradio as gr
 import numpy as np
 import pandas as pd
@@ -119,7 +126,10 @@ MULTI_CLASS_NAMES = ["Armed Assault", "Bombing or Explosion", "Kidnapping", "Oth
 # ============================================================================
 
 qa_model_name = 'salsarra/ConfliBERT-QA'
-qa_model = TFAutoModelForQuestionAnswering.from_pretrained(qa_model_name)
+if _USE_TF_QA:
+    qa_model = TFAutoModelForQuestionAnswering.from_pretrained(qa_model_name)
+else:
+    qa_model = AutoModelForQuestionAnswering.from_pretrained(qa_model_name, from_tf=True)
 qa_tokenizer = AutoTokenizer.from_pretrained(qa_model_name)
 
 ner_model_name = 'eventdata-utd/conflibert-named-entity-recognition'
@@ -192,13 +202,23 @@ def question_answering(context, question):
     if not context or not question:
         return "Please provide both context and question."
     try:
-        inputs = qa_tokenizer(question, context, return_tensors='tf', truncation=True)
-        outputs = qa_model(inputs)
-        start = tf.argmax(outputs.start_logits, axis=1).numpy()[0]
-        end = tf.argmax(outputs.end_logits, axis=1).numpy()[0] + 1
-        tokens = qa_tokenizer.convert_ids_to_tokens(
-            inputs['input_ids'].numpy()[0][start:end]
-        )
+        if _USE_TF_QA:
+            inputs = qa_tokenizer(question, context, return_tensors='tf', truncation=True)
+            outputs = qa_model(inputs)
+            start = tf.argmax(outputs.start_logits, axis=1).numpy()[0]
+            end = tf.argmax(outputs.end_logits, axis=1).numpy()[0] + 1
+            tokens = qa_tokenizer.convert_ids_to_tokens(
+                inputs['input_ids'].numpy()[0][start:end]
+            )
+        else:
+            inputs = qa_tokenizer(question, context, return_tensors='pt', truncation=True)
+            with torch.no_grad():
+                outputs = qa_model(**inputs)
+            start = torch.argmax(outputs.start_logits, dim=1).item()
+            end = torch.argmax(outputs.end_logits, dim=1).item() + 1
+            tokens = qa_tokenizer.convert_ids_to_tokens(
+                inputs['input_ids'][0][start:end]
+            )
         answer = qa_tokenizer.convert_tokens_to_string(tokens)
         return f"<span style='color: #10b981; font-weight: 600;'>{answer}</span>"
     except Exception as e:

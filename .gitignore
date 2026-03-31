@@ -1,0 +1,12 @@
+env/
+.gradio/
+.DS_Store
+.Rhistory
+*.html
+__pycache__/
+*.pyc
+conflibertR/
+screenshots/
+finetuned_model/
+ft_output/
+processed_results.csv

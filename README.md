@@ -43,12 +43,14 @@ Provide a context passage and a question. The model extracts the most relevant a
 
 Train your own binary or multiclass classifier directly in the browser. Upload data (or load a built-in example), pick a base model, configure training, and go. After training, results and a "Try Your Model" panel appear side by side. You can also save the model and run batch predictions.
 
-<!-- Take a screenshot of the Fine-tune tab and save as screenshots/finetune.png -->
-![Fine-tune](./screenshots/finetune.png)
-
 ### Model Comparison
 
 Compare multiple base model architectures on the same dataset. The comparison produces a metrics table, a grouped bar chart, and ROC-AUC curves.
+
+<!-- Take a screenshot of the Fine-tune tab and save as screenshots/finetune.png -->
+![Fine-tune](./screenshots/finetune.png)
+
+
 
 ## Supported Models
 

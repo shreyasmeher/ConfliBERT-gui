@@ -6,7 +6,7 @@
 import os
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
-# Patch gradio_client bug: get_type crashes on boolean JSON sub-schemas
+# Patch gradio_client bug: bool JSON sub-schemas crash schema parsing
 try:
     from gradio_client import utils as _gc_utils
     _original_get_type = _gc_utils.get_type
@@ -15,6 +15,13 @@ try:
             return "Any"
         return _original_get_type(schema)
     _gc_utils.get_type = _patched_get_type
+
+    _original_json_schema = _gc_utils._json_schema_to_python_type
+    def _patched_json_schema(schema, defs=None):
+        if isinstance(schema, bool):
+            return "Any"
+        return _original_json_schema(schema, defs)
+    _gc_utils._json_schema_to_python_type = _patched_json_schema
 except Exception:
     pass
 

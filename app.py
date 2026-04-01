@@ -419,10 +419,14 @@ def text_classification(text, custom_model=None, custom_tokenizer=None):
         return handle_error(e)
 
 
-def multilabel_classification(text):
+def multilabel_classification(text, custom_model=None, custom_tokenizer=None):
     if not text:
         return "Please provide text for classification."
     try:
+        # Use custom model if loaded
+        if custom_model is not None and custom_tokenizer is not None:
+            return predict_with_model(text, custom_model, custom_tokenizer)
+
         inputs = multi_clf_tokenizer(
             text, return_tensors='pt', truncation=True, padding=True
         ).to(device)
@@ -838,19 +842,20 @@ def predict_finetuned(text, model_state, tokenizer_state, num_labels_state):
     return predict_with_model(text, model_state, tokenizer_state)
 
 
-def save_finetuned_model(save_path, model_state, tokenizer_state):
-    """Save the finetuned model and tokenizer to disk."""
+def save_finetuned_model(model_state, tokenizer_state):
+    """Save the finetuned model as a downloadable zip file."""
     if model_state is None:
-        return "No model to save. Please train a model first."
-    if not save_path:
-        return "Please specify a save directory."
+        return None, "No model to save. Please train a model first."
     try:
-        os.makedirs(save_path, exist_ok=True)
-        model_state.save_pretrained(save_path)
-        tokenizer_state.save_pretrained(save_path)
-        return f"Model saved successfully to: {save_path}"
+        save_dir = tempfile.mkdtemp(prefix='conflibert_save_')
+        model_state.save_pretrained(save_dir)
+        tokenizer_state.save_pretrained(save_dir)
+        import shutil
+        zip_path = os.path.join(tempfile.gettempdir(), 'finetuned_model')
+        shutil.make_archive(zip_path, 'zip', save_dir)
+        return zip_path + '.zip', "Model ready for download."
     except Exception as e:
-        return f"Error saving model: {str(e)}"
+        return None, f"Error saving model: {str(e)}"
 
 
 def load_custom_model(path):
@@ -1316,19 +1321,20 @@ def al_submit_and_continue(
         )
 
 
-def al_save_model(save_path, al_model, al_tokenizer):
-    """Save the active-learning model to disk."""
+def al_save_model(al_model, al_tokenizer):
+    """Save the active-learning model as a downloadable zip file."""
     if al_model is None:
-        return "No model to save. Run at least one round first."
-    if not save_path:
-        return "Please specify a save directory."
+        return None, "No model to save. Run at least one round first."
     try:
-        os.makedirs(save_path, exist_ok=True)
-        al_model.save_pretrained(save_path)
-        al_tokenizer.save_pretrained(save_path)
-        return f"Model saved to: {save_path}"
+        save_dir = tempfile.mkdtemp(prefix='conflibert_al_save_')
+        al_model.save_pretrained(save_dir)
+        al_tokenizer.save_pretrained(save_dir)
+        import shutil
+        zip_path = os.path.join(tempfile.gettempdir(), 'al_model')
+        shutil.make_archive(zip_path, 'zip', save_dir)
+        return zip_path + '.zip', "Model ready for download."
     except Exception as e:
-        return f"Error saving model: {str(e)}"
+        return None, f"Error saving model: {str(e)}"
 
 
 def load_example_active_learning():
@@ -1796,8 +1802,12 @@ with gr.Blocks(theme=theme, css=custom_css, title="ConfliBERT") as demo:
                 "Identify multiple event types in text. Each category is scored "
                 "independently: **Armed Assault**, **Bombing/Explosion**, "
                 "**Kidnapping**, **Other**. Categories above 50% confidence "
-                "are highlighted."
+                "are highlighted. Load a custom finetuned model below."
             ))
+
+            custom_multi_model = gr.State(None)
+            custom_multi_tokenizer = gr.State(None)
+
             with gr.Row(equal_height=True):
                 with gr.Column():
                     multi_input = gr.Textbox(
@@ -1815,6 +1825,22 @@ with gr.Blocks(theme=theme, css=custom_css, title="ConfliBERT") as demo:
                     multi_csv_in = gr.File(label="Upload CSV", file_types=[".csv"])
                     multi_csv_out = gr.File(label="Download Results")
                 multi_csv_btn = gr.Button("Process CSV", variant="secondary")
+
+            with gr.Accordion("Load Custom Model", open=False):
+                gr.Markdown(
+                    "Load a finetuned multiclass model from a local directory "
+                    "to use instead of the default pretrained classifier."
+                )
+                multi_model_path = gr.Textbox(
+                    label="Model directory path",
+                    placeholder="e.g., ./finetuned_model",
+                )
+                with gr.Row():
+                    multi_load_btn = gr.Button("Load Model", variant="secondary")
+                    multi_reset_btn = gr.Button(
+                        "Reset to Pretrained", variant="secondary",
+                    )
+                multi_status = gr.Markdown("")
 
         # ================================================================
         # QUESTION ANSWERING TAB
@@ -1983,11 +2009,9 @@ with gr.Blocks(theme=theme, css=custom_css, title="ConfliBERT") as demo:
             with gr.Column(visible=False) as ft_actions_col:
                 with gr.Row(equal_height=True):
                     with gr.Column():
-                        gr.Markdown("**Save model**")
-                        ft_save_path = gr.Textbox(
-                            label="Save Directory", value="./finetuned_model",
-                        )
-                        ft_save_btn = gr.Button("Save", variant="secondary")
+                        gr.Markdown("**Download model**")
+                        ft_save_btn = gr.Button("Prepare Download", variant="secondary")
+                        ft_save_file = gr.File(label="Download Model (.zip)")
                         ft_save_status = gr.Markdown("")
                     with gr.Column():
                         gr.Markdown("**Batch predictions**")
@@ -2150,12 +2174,10 @@ with gr.Blocks(theme=theme, css=custom_css, title="ConfliBERT") as demo:
 
                 al_chart = gr.Plot(label="Metrics Across Rounds")
 
-                gr.Markdown("### Save Model")
+                gr.Markdown("### Download Model")
                 with gr.Row():
-                    al_save_path = gr.Textbox(
-                        label="Save Directory", value="./al_model",
-                    )
-                    al_save_btn = gr.Button("Save", variant="secondary")
+                    al_save_btn = gr.Button("Prepare Download", variant="secondary")
+                    al_save_file = gr.File(label="Download Model (.zip)")
                     al_save_status = gr.Markdown("")
 
     # ---- FOOTER ----
@@ -2212,10 +2234,21 @@ with gr.Blocks(theme=theme, css=custom_css, title="ConfliBERT") as demo:
 
     # Multilabel Classification
     multi_btn.click(
-        fn=multilabel_classification, inputs=[multi_input], outputs=[multi_output],
+        fn=multilabel_classification,
+        inputs=[multi_input, custom_multi_model, custom_multi_tokenizer],
+        outputs=[multi_output],
     )
     multi_csv_btn.click(
         fn=process_csv_multilabel, inputs=[multi_csv_in], outputs=[multi_csv_out],
+    )
+    multi_load_btn.click(
+        fn=load_custom_model,
+        inputs=[multi_model_path],
+        outputs=[custom_multi_model, custom_multi_tokenizer, multi_status],
+    )
+    multi_reset_btn.click(
+        fn=reset_custom_model,
+        outputs=[custom_multi_model, custom_multi_tokenizer, multi_status],
     )
 
     # Question Answering
@@ -2264,8 +2297,8 @@ with gr.Blocks(theme=theme, css=custom_css, title="ConfliBERT") as demo:
     # Save finetuned model
     ft_save_btn.click(
         fn=save_finetuned_model,
-        inputs=[ft_save_path, ft_model_state, ft_tokenizer_state],
-        outputs=[ft_save_status],
+        inputs=[ft_model_state, ft_tokenizer_state],
+        outputs=[ft_save_file, ft_save_status],
     )
 
     # Batch predictions with finetuned model
@@ -2313,8 +2346,8 @@ with gr.Blocks(theme=theme, css=custom_css, title="ConfliBERT") as demo:
 
     al_save_btn.click(
         fn=al_save_model,
-        inputs=[al_save_path, al_model_state, al_tokenizer_state],
-        outputs=[al_save_status],
+        inputs=[al_model_state, al_tokenizer_state],
+        outputs=[al_save_file, al_save_status],
     )
 
     # Model comparison

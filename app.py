@@ -1546,7 +1546,7 @@ utd_orange = gr.themes.Color(
 theme = gr.themes.Soft(
     primary_hue=utd_orange,
     secondary_hue="neutral",
-    font=gr.themes.GoogleFont("Inter"),
+    font=[gr.themes.GoogleFont("Inter"), "ui-sans-serif", "system-ui", "sans-serif"],
 )
 
 custom_css = """

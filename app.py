@@ -2122,8 +2122,6 @@ with gr.Blocks(theme=theme, css=custom_css, title="ConfliBERT") as demo:
                 al_annotation_df = gr.Dataframe(
                     headers=["Text", "Label"],
                     interactive=True,
-                    wrap=True,
-                    row_count=(1, "dynamic"),
                 )
                 with gr.Row():
                     al_submit_btn = gr.Button(

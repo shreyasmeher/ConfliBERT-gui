@@ -6,6 +6,18 @@
 import os
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
+# Patch gradio_client bug: get_type crashes on boolean JSON sub-schemas
+try:
+    from gradio_client import utils as _gc_utils
+    _original_get_type = _gc_utils.get_type
+    def _patched_get_type(schema):
+        if isinstance(schema, bool):
+            return "Any"
+        return _original_get_type(schema)
+    _gc_utils.get_type = _patched_get_type
+except Exception:
+    pass
+
 import torch
 from transformers import (
     AutoTokenizer,

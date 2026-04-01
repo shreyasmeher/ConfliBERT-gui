@@ -2317,4 +2317,4 @@ with gr.Blocks(theme=theme, css=custom_css, title="ConfliBERT") as demo:
 # LAUNCH
 # ============================================================================
 
-demo.launch(share=True)
+demo.launch(share=True, ssr_mode=False)

@@ -41,7 +41,7 @@ Provide a context passage and a question. The model extracts the most relevant a
 
 ### Fine-tuning
 
-Train your own binary or multiclass classifier directly in the browser. Upload data (or load a built-in example), pick a base model, configure training, and go. After training, results and a "Try Your Model" panel appear side by side. You can also save the model and run batch predictions.
+Train your own binary or multiclass classifier directly in the browser. Upload data (or load a built-in example), pick a base model, configure training, and go. Supports **LoRA** and **QLoRA** for parameter-efficient training with lower VRAM usage. After training, results and a "Try Your Model" panel appear side by side. You can also save the model and run batch predictions.
 
 ### Model Comparison
 
@@ -50,7 +50,9 @@ Compare multiple base model architectures on the same dataset. The comparison pr
 <!-- Take a screenshot of the Fine-tune tab and save as screenshots/finetune.png -->
 ![Fine-tune](./screenshots/finetune.png)
 
+### Active Learning
 
+Iteratively build a strong classifier with fewer labels. Start with a small labeled seed set and a pool of unlabeled text. The model identifies the most uncertain samples for you to label, retrains, and repeats. Supports entropy, margin, and least-confidence query strategies.
 
 ## Supported Models
 
@@ -144,7 +146,8 @@ Opens at `http://localhost:7860` and generates a public shareable link. The firs
 | Binary Classification | Conflict vs. non-conflict, supports custom models |
 | Multilabel Classification | Multi-event-type scoring |
 | Question Answering | Extract answers from a context passage |
-| Fine-tune | Train classifiers, compare models, ROC curves |
+| Fine-tune | Train classifiers with optional LoRA/QLoRA, compare models, ROC curves |
+| Active Learning | Iterative uncertainty-based labeling and retraining |
 
 ### Fine-tuning Quick Start
 
@@ -154,6 +157,13 @@ Opens at `http://localhost:7860` and generates a public shareable link. The firs
 4. Review metrics and try your model on new text
 5. Save the model and load it in the **Binary Classification** tab
 
+### LoRA / QLoRA Fine-tuning
+
+1. Go to the **Fine-tune** tab
+2. Open **Advanced Settings** and check **Use LoRA** (optionally enable **QLoRA** for 4-bit quantization on CUDA GPUs)
+3. Adjust LoRA rank and alpha as needed (defaults of r=8, alpha=16 work well)
+4. Train as usual — LoRA weights are merged back automatically so the saved model works like any other
+
 ### Model Comparison Quick Start
 
 1. Upload data (or load an example) in the **Fine-tune** tab
@@ -161,6 +171,16 @@ Opens at `http://localhost:7860` and generates a public shareable link. The firs
 3. Check 2 or more models to compare
 4. Click **"Compare Models"**
 5. View the metrics table, bar chart, and ROC-AUC curves
+
+### Active Learning Quick Start
+
+1. Go to the **Active Learning** tab
+2. Click **"Load Example: Binary Active Learning"** (or upload your own seed + pool)
+3. Configure the query strategy and samples per round
+4. Click **"Initialize Active Learning"**
+5. Label the uncertain samples shown in the table (fill in 0 or 1)
+6. Click **"Submit Labels & Next Round"** to retrain and get the next batch
+7. Repeat until satisfied, then save the model
 
 ### Data Format
 
@@ -209,10 +229,16 @@ conflibert-gui/
       train.tsv          #   0=Diplomacy, 1=Armed Conflict,
       dev.tsv            #   2=Protest, 3=Humanitarian
       test.tsv
+    active_learning/     # Example active learning dataset
+      seed.tsv           #   20 labeled seed samples
+      pool.txt           #   61 unlabeled pool texts
+      pool_with_labels.tsv  # Ground truth for pool (cheat sheet)
 ```
 
 ## Training Features
 
+- **LoRA / QLoRA** parameter-efficient fine-tuning (via [PEFT](https://github.com/huggingface/peft))
+- **Active learning** with entropy, margin, and least-confidence query strategies
 - Early stopping with configurable patience
 - Learning rate schedulers: linear, cosine, constant, constant with warmup
 - Mixed precision training (FP16) on CUDA GPUs

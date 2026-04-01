@@ -45,6 +45,19 @@ from sklearn.preprocessing import label_binarize
 from torch.utils.data import Dataset as TorchDataset
 import gc
 
+# LoRA / QLoRA support (optional)
+try:
+    from peft import LoraConfig, get_peft_model, TaskType
+    PEFT_AVAILABLE = True
+except ImportError:
+    PEFT_AVAILABLE = False
+
+try:
+    from transformers import BitsAndBytesConfig
+    BNB_AVAILABLE = True
+except ImportError:
+    BNB_AVAILABLE = False
+
 
 # ============================================================================
 # CONFIGURATION
@@ -613,6 +626,7 @@ def run_finetuning(
     train_file, dev_file, test_file, task_type, model_display_name,
     epochs, batch_size, lr, weight_decay, warmup_ratio, max_seq_len,
     grad_accum, fp16, patience, scheduler,
+    use_lora, lora_rank, lora_alpha, use_qlora,
     progress=gr.Progress(track_tqdm=True),
 ):
     """Main finetuning function. Returns logs, metrics, model state, and visibility updates."""
@@ -644,9 +658,42 @@ def run_finetuning(
         # Load model and tokenizer
         model_id = FINETUNE_MODELS[model_display_name]
         tokenizer = AutoTokenizer.from_pretrained(model_id)
-        model = AutoModelForSequenceClassification.from_pretrained(
-            model_id, num_labels=num_labels
-        )
+
+        lora_active = False
+        if use_qlora:
+            if not (PEFT_AVAILABLE and BNB_AVAILABLE and torch.cuda.is_available()):
+                raise ValueError(
+                    "QLoRA requires a CUDA GPU and the peft + bitsandbytes packages."
+                )
+            bnb_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_use_double_quant=True,
+            )
+            model = AutoModelForSequenceClassification.from_pretrained(
+                model_id, num_labels=num_labels, quantization_config=bnb_config,
+            )
+        else:
+            model = AutoModelForSequenceClassification.from_pretrained(
+                model_id, num_labels=num_labels,
+            )
+
+        if use_lora or use_qlora:
+            if not PEFT_AVAILABLE:
+                raise ValueError(
+                    "LoRA requires the 'peft' package. Install: pip install peft"
+                )
+            lora_config = LoraConfig(
+                task_type=TaskType.SEQ_CLS,
+                r=int(lora_rank),
+                lora_alpha=int(lora_alpha),
+                lora_dropout=0.1,
+                bias="none",
+            )
+            model.enable_input_require_grads()
+            model = get_peft_model(model, lora_config)
+            lora_active = True
 
         # Create datasets
         train_ds = TextClassificationDataset(
@@ -709,6 +756,10 @@ def run_finetuning(
         test_results = trainer.evaluate(test_ds, metric_key_prefix='test')
 
         # Build log text
+        lora_info = ""
+        if lora_active:
+            method = "QLoRA (4-bit)" if use_qlora else "LoRA"
+            lora_info = f"PEFT:  {method}  r={int(lora_rank)}  alpha={int(lora_alpha)}\n"
         header = (
             f"=== Configuration ===\n"
             f"Model: {model_display_name}\n"
@@ -716,6 +767,7 @@ def run_finetuning(
             f"Task:  {task_type} Classification ({num_labels} classes)\n"
             f"Data:  {len(train_texts)} train / {len(dev_texts)} dev / {len(test_texts)} test\n"
             f"Epochs: {epochs}  Batch: {batch_size}  LR: {lr}  Scheduler: {scheduler}\n"
+            f"{lora_info}"
             f"\n=== Training Log ===\n"
         )
         runtime = train_result.metrics.get('train_runtime', 0)
@@ -733,8 +785,11 @@ def run_finetuning(
                 metrics_data.append([name, f"{float(v):.4f}"])
         metrics_df = pd.DataFrame(metrics_data, columns=['Metric', 'Score'])
 
-        # Move trained model to CPU for inference
-        trained_model = trainer.model.cpu()
+        # Merge LoRA weights back into base model for clean save/inference
+        trained_model = trainer.model
+        if lora_active and hasattr(trained_model, 'merge_and_unload'):
+            trained_model = trained_model.merge_and_unload()
+        trained_model = trained_model.cpu()
         trained_model.eval()
 
         return (
@@ -864,9 +919,412 @@ def load_example_multiclass():
     )
 
 
+# ============================================================================
+# ACTIVE LEARNING
+# ============================================================================
+
+def parse_pool_file(file_path):
+    """Parse an unlabeled text pool. Accepts CSV with 'text' column, or one text per line."""
+    path = get_path(file_path)
+    # Try CSV/TSV with 'text' column first
+    try:
+        df = pd.read_csv(path)
+        if 'text' in df.columns:
+            texts = [str(t) for t in df['text'].dropna().tolist()]
+            if texts:
+                return texts
+    except Exception:
+        pass
+    # Fallback: one text per line
+    texts = []
+    with open(path, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                texts.append(line)
+    if not texts:
+        raise ValueError("No texts found in pool file.")
+    return texts
+
+
+def compute_uncertainty(model, tokenizer, texts, strategy='entropy',
+                        max_seq_len=512, batch_size=32):
+    """Compute uncertainty scores for unlabeled texts. Higher = more uncertain."""
+    model.eval()
+    dev = next(model.parameters()).device
+    scores = []
+
+    for i in range(0, len(texts), batch_size):
+        batch_texts = texts[i:i + batch_size]
+        inputs = tokenizer(
+            batch_texts, return_tensors='pt', truncation=True,
+            padding=True, max_length=max_seq_len,
+        )
+        inputs = {k: v.to(dev) for k, v in inputs.items()}
+        with torch.no_grad():
+            logits = model(**inputs).logits
+        probs = torch.softmax(logits, dim=1).cpu().numpy()
+
+        if strategy == 'entropy':
+            s = -np.sum(probs * np.log(probs + 1e-10), axis=1)
+        elif strategy == 'margin':
+            sorted_p = np.sort(probs, axis=1)
+            s = -(sorted_p[:, -1] - sorted_p[:, -2])
+        else:  # least_confidence
+            s = -np.max(probs, axis=1)
+        scores.extend(s.tolist())
+
+    return scores
+
+
+def _build_al_metrics_chart(metrics_history, task_type):
+    """Build a Plotly chart of active-learning metrics across rounds."""
+    import plotly.graph_objects as go
+
+    if not metrics_history:
+        return None
+
+    rounds = [m['round'] for m in metrics_history]
+    train_sizes = [m.get('train_size', 0) for m in metrics_history]
+
+    metric_keys = (['f1', 'accuracy', 'precision', 'recall']
+                    if task_type == 'Binary'
+                    else ['f1_macro', 'accuracy'])
+
+    fig = go.Figure()
+    colors = ['#ff6b35', '#3b82f6', '#10b981', '#8b5cf6']
+
+    for i, key in enumerate(metric_keys):
+        values = [m.get(key) for m in metrics_history]
+        if any(v is not None for v in values):
+            fig.add_trace(go.Scatter(
+                x=rounds, y=values, mode='lines+markers',
+                name=key.replace('_', ' ').title(),
+                line=dict(color=colors[i % len(colors)], width=2),
+            ))
+
+    fig.add_trace(go.Bar(
+        x=rounds, y=train_sizes, name='Train Size',
+        marker_color='rgba(200,200,200,0.4)', yaxis='y2',
+    ))
+
+    fig.update_layout(
+        xaxis_title='Round', yaxis_title='Score', yaxis_range=[0, 1.05],
+        yaxis2=dict(title='Train Size', overlaying='y', side='right'),
+        template='plotly_white',
+        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+        height=350, margin=dict(t=40, b=40),
+    )
+    return fig
+
+
+def _train_al_model(texts, labels, num_labels, dev_texts, dev_labels,
+                    task_type, model_id, epochs, batch_size, lr, max_seq_len,
+                    use_lora, lora_rank, lora_alpha):
+    """Train a model for one active-learning round. Returns (model, tokenizer, eval_metrics)."""
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    model = AutoModelForSequenceClassification.from_pretrained(
+        model_id, num_labels=num_labels,
+    )
+
+    if use_lora and PEFT_AVAILABLE:
+        lora_cfg = LoraConfig(
+            task_type=TaskType.SEQ_CLS,
+            r=int(lora_rank), lora_alpha=int(lora_alpha),
+            lora_dropout=0.1, bias="none",
+        )
+        model.enable_input_require_grads()
+        model = get_peft_model(model, lora_cfg)
+
+    train_ds = TextClassificationDataset(texts, labels, tokenizer, max_seq_len)
+    dev_ds = None
+    if dev_texts is not None:
+        dev_ds = TextClassificationDataset(dev_texts, dev_labels, tokenizer, max_seq_len)
+
+    output_dir = tempfile.mkdtemp(prefix='conflibert_al_')
+    training_args = TrainingArguments(
+        output_dir=output_dir,
+        num_train_epochs=epochs,
+        per_device_train_batch_size=batch_size,
+        per_device_eval_batch_size=batch_size * 2,
+        learning_rate=lr,
+        weight_decay=0.01,
+        warmup_ratio=0.1,
+        eval_strategy='epoch' if dev_ds else 'no',
+        save_strategy='no',
+        logging_steps=10,
+        report_to='none',
+        seed=42,
+    )
+
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_ds,
+        eval_dataset=dev_ds,
+        compute_metrics=make_compute_metrics(task_type) if dev_ds else None,
+    )
+    trainer.train()
+
+    eval_metrics = {}
+    if dev_ds:
+        results = trainer.evaluate()
+        for k, v in results.items():
+            if isinstance(v, (int, float, np.floating)):
+                eval_metrics[k.replace('eval_', '')] = round(float(v), 4)
+
+    trained_model = trainer.model
+    if use_lora and PEFT_AVAILABLE and hasattr(trained_model, 'merge_and_unload'):
+        trained_model = trained_model.merge_and_unload()
+
+    return trained_model, tokenizer, eval_metrics
+
+
+def al_initialize(
+    seed_file, pool_file, dev_file, task_type, model_display_name,
+    query_strategy, query_size, epochs, batch_size, lr, max_seq_len,
+    use_lora, lora_rank, lora_alpha,
+    progress=gr.Progress(track_tqdm=True),
+):
+    """Initialize active learning: train on seed data, query first uncertain batch."""
+    try:
+        if seed_file is None or pool_file is None:
+            raise ValueError("Upload both a labeled seed file and an unlabeled pool file.")
+
+        seed_texts, seed_labels, num_labels = parse_data_file(seed_file)
+        pool_texts = parse_pool_file(pool_file)
+
+        dev_texts, dev_labels = None, None
+        if dev_file is not None:
+            dev_texts, dev_labels, _ = parse_data_file(dev_file)
+
+        if task_type == "Binary":
+            num_labels = 2
+
+        query_size = int(query_size)
+        model_id = FINETUNE_MODELS[model_display_name]
+
+        trained_model, tokenizer, eval_metrics = _train_al_model(
+            seed_texts, seed_labels, num_labels, dev_texts, dev_labels,
+            task_type, model_id, int(epochs), int(batch_size), lr,
+            int(max_seq_len), use_lora, lora_rank, lora_alpha,
+        )
+
+        # Build round-0 metrics
+        round_metrics = {'round': 0, 'train_size': len(seed_texts)}
+        round_metrics.update(eval_metrics)
+
+        # Query uncertain samples from pool
+        scores = compute_uncertainty(
+            trained_model, tokenizer, pool_texts, query_strategy, int(max_seq_len),
+        )
+        top_indices = np.argsort(scores)[-query_size:][::-1].tolist()
+        query_texts_batch = [pool_texts[i] for i in top_indices]
+
+        annotation_df = pd.DataFrame({
+            'Text': query_texts_batch,
+            'Label': [''] * len(query_texts_batch),
+        })
+
+        al_state = {
+            'labeled_texts': list(seed_texts),
+            'labeled_labels': list(seed_labels),
+            'pool_texts': pool_texts,
+            'pool_available': [i for i in range(len(pool_texts)) if i not in set(top_indices)],
+            'current_query_indices': top_indices,
+            'dev_texts': dev_texts,
+            'dev_labels': dev_labels,
+            'num_labels': num_labels,
+            'round': 1,
+            'metrics_history': [round_metrics],
+            'model_id': model_id,
+            'model_display_name': model_display_name,
+            'task_type': task_type,
+            'query_strategy': query_strategy,
+            'query_size': query_size,
+            'epochs': int(epochs),
+            'batch_size': int(batch_size),
+            'lr': lr,
+            'max_seq_len': int(max_seq_len),
+            'use_lora': use_lora,
+            'lora_rank': int(lora_rank) if use_lora else 8,
+            'lora_alpha': int(lora_alpha) if use_lora else 16,
+        }
+
+        trained_model = trained_model.cpu()
+        trained_model.eval()
+
+        log_text = (
+            f"=== Active Learning Initialized ===\n"
+            f"Seed: {len(seed_texts)} labeled  |  Pool: {len(pool_texts)} unlabeled\n"
+            f"Model: {model_display_name}\n"
+            f"Strategy: {query_strategy}  |  Samples/round: {query_size}\n\n"
+            f"--- Round 0 (seed) ---\n"
+            f"Train size: {len(seed_texts)}\n"
+        )
+        for k, v in eval_metrics.items():
+            log_text += f"  {k}: {v}\n"
+        log_text += (
+            f"\n--- Round 1: {len(query_texts_batch)} samples queried ---\n"
+            f"Label the samples below, then click 'Submit Labels & Next Round'.\n"
+        )
+
+        chart = _build_al_metrics_chart([round_metrics], task_type)
+
+        return (
+            al_state, trained_model, tokenizer,
+            annotation_df, log_text, chart,
+            gr.Column(visible=True),
+        )
+
+    except Exception as e:
+        return (
+            {}, None, None,
+            pd.DataFrame(columns=['Text', 'Label']),
+            f"Initialization failed:\n{str(e)}",
+            None,
+            gr.Column(visible=False),
+        )
+
+
+def al_submit_and_continue(
+    annotation_df, al_state, al_model, al_tokenizer, prev_log,
+    progress=gr.Progress(track_tqdm=True),
+):
+    """Accept user labels, retrain, query next uncertain batch."""
+    try:
+        if not al_state or al_model is None:
+            raise ValueError("No active session. Initialize first.")
+
+        new_texts = annotation_df['Text'].tolist()
+        new_labels = []
+        for i, raw in enumerate(annotation_df['Label'].tolist()):
+            s = str(raw).strip()
+            if s in ('', 'nan'):
+                raise ValueError(f"Row {i + 1} has no label. Label all samples first.")
+            new_labels.append(int(s))
+
+        num_labels = al_state['num_labels']
+        for l in new_labels:
+            if l < 0 or l >= num_labels:
+                raise ValueError(f"Label {l} out of range [0, {num_labels - 1}].")
+
+        # Add newly labeled samples
+        al_state['labeled_texts'].extend(new_texts)
+        al_state['labeled_labels'].extend(new_labels)
+
+        queried_set = set(al_state['current_query_indices'])
+        al_state['pool_available'] = [
+            i for i in al_state['pool_available'] if i not in queried_set
+        ]
+
+        current_round = al_state['round']
+
+        # Retrain on all labeled data
+        trained_model, tokenizer, eval_metrics = _train_al_model(
+            al_state['labeled_texts'], al_state['labeled_labels'],
+            num_labels, al_state['dev_texts'], al_state['dev_labels'],
+            al_state['task_type'], al_state['model_id'],
+            al_state['epochs'], al_state['batch_size'], al_state['lr'],
+            al_state['max_seq_len'], al_state['use_lora'],
+            al_state['lora_rank'], al_state['lora_alpha'],
+        )
+
+        round_metrics = {
+            'round': current_round,
+            'train_size': len(al_state['labeled_texts']),
+        }
+        round_metrics.update(eval_metrics)
+        al_state['metrics_history'].append(round_metrics)
+
+        # Query next batch from remaining pool
+        remaining_pool = al_state['pool_available']
+        remaining_texts = [al_state['pool_texts'][i] for i in remaining_pool]
+
+        log_add = (
+            f"\n--- Round {current_round} complete ---\n"
+            f"Added {len(new_labels)} labels  |  "
+            f"Total train: {len(al_state['labeled_texts'])}\n"
+        )
+        for k, v in eval_metrics.items():
+            log_add += f"  {k}: {v}\n"
+
+        if remaining_texts:
+            scores = compute_uncertainty(
+                trained_model, tokenizer, remaining_texts,
+                al_state['query_strategy'], al_state['max_seq_len'],
+            )
+            q = min(al_state['query_size'], len(remaining_texts))
+            top_local = np.argsort(scores)[-q:][::-1].tolist()
+            top_pool_indices = [remaining_pool[i] for i in top_local]
+            query_texts = [al_state['pool_texts'][i] for i in top_pool_indices]
+
+            al_state['current_query_indices'] = top_pool_indices
+            al_state['round'] = current_round + 1
+
+            annotation_out = pd.DataFrame({
+                'Text': query_texts,
+                'Label': [''] * len(query_texts),
+            })
+            pool_left = len(remaining_pool) - len(top_pool_indices)
+            log_add += (
+                f"Pool remaining: {pool_left}\n"
+                f"\n--- Round {current_round + 1}: {len(query_texts)} samples queried ---\n"
+            )
+        else:
+            annotation_out = pd.DataFrame(columns=['Text', 'Label'])
+            al_state['current_query_indices'] = []
+            al_state['round'] = current_round + 1
+            log_add += "\nPool exhausted. Active learning complete!\n"
+
+        trained_model = trained_model.cpu()
+        trained_model.eval()
+
+        chart = _build_al_metrics_chart(al_state['metrics_history'], al_state['task_type'])
+        log_text = prev_log + log_add
+
+        return (
+            al_state, trained_model, tokenizer,
+            annotation_out, log_text, chart,
+        )
+
+    except Exception as e:
+        return (
+            al_state, al_model, al_tokenizer,
+            pd.DataFrame(columns=['Text', 'Label']),
+            prev_log + f"\nError: {str(e)}\n",
+            None,
+        )
+
+
+def al_save_model(save_path, al_model, al_tokenizer):
+    """Save the active-learning model to disk."""
+    if al_model is None:
+        return "No model to save. Run at least one round first."
+    if not save_path:
+        return "Please specify a save directory."
+    try:
+        os.makedirs(save_path, exist_ok=True)
+        al_model.save_pretrained(save_path)
+        al_tokenizer.save_pretrained(save_path)
+        return f"Model saved to: {save_path}"
+    except Exception as e:
+        return f"Error saving model: {str(e)}"
+
+
+def load_example_active_learning():
+    """Load the active learning example dataset."""
+    return (
+        os.path.join(EXAMPLES_DIR, "active_learning", "seed.tsv"),
+        os.path.join(EXAMPLES_DIR, "active_learning", "pool.txt"),
+        os.path.join(EXAMPLES_DIR, "binary", "dev.tsv"),
+        "Binary",
+    )
+
+
 def run_comparison(
     train_file, dev_file, test_file, task_type, selected_models,
-    epochs, batch_size, lr,
+    epochs, batch_size, lr, cmp_use_lora, cmp_lora_rank, cmp_lora_alpha,
     progress=gr.Progress(track_tqdm=True),
 ):
     """Train multiple models on the same data and compare performance + ROC curves."""
@@ -913,6 +1371,18 @@ def run_comparison(
                 model = AutoModelForSequenceClassification.from_pretrained(
                     model_id, num_labels=num_labels,
                 )
+
+                cmp_lora_active = False
+                if cmp_use_lora and PEFT_AVAILABLE:
+                    lora_cfg = LoraConfig(
+                        task_type=TaskType.SEQ_CLS,
+                        r=int(cmp_lora_rank), lora_alpha=int(cmp_lora_alpha),
+                        lora_dropout=0.1, bias="none",
+                    )
+                    model.enable_input_require_grads()
+                    model = get_peft_model(model, lora_cfg)
+                    cmp_lora_active = True
+
                 train_ds = TextClassificationDataset(train_texts, train_labels, tokenizer, 512)
                 dev_ds = TextClassificationDataset(dev_texts, dev_labels, tokenizer, 512)
                 test_ds = TextClassificationDataset(test_texts, test_labels, tokenizer, 512)
@@ -948,6 +1418,10 @@ def run_comparison(
                 )
 
                 train_result = trainer.train()
+
+                # Merge LoRA weights before prediction
+                if cmp_lora_active and hasattr(trainer.model, 'merge_and_unload'):
+                    trainer.model = trainer.model.merge_and_unload()
 
                 # Get predictions for ROC curves
                 pred_output = trainer.predict(test_ds)
@@ -1194,6 +1668,10 @@ with gr.Blocks(theme=theme, css=custom_css, title="ConfliBERT") as demo:
                         "8. Save the model and load it later in the "
                         "Classification tab\n\n"
                         "**Advanced features:**\n"
+                        "- **LoRA / QLoRA** for parameter-efficient training "
+                        "(lower VRAM, faster)\n"
+                        "- **Active Learning** tab for iterative labeling "
+                        "with uncertainty sampling\n"
                         "- Early stopping with configurable patience\n"
                         "- Learning rate schedulers (linear, cosine, constant)\n"
                         "- Mixed precision training (FP16 on CUDA GPUs)\n"
@@ -1429,6 +1907,22 @@ with gr.Blocks(theme=theme, css=custom_css, title="ConfliBERT") as demo:
                     ["linear", "cosine", "constant", "constant_with_warmup"],
                     label="LR Scheduler", value="linear",
                 )
+                gr.Markdown("**Parameter-Efficient Fine-Tuning (PEFT)**")
+                with gr.Row():
+                    ft_use_lora = gr.Checkbox(
+                        label="Use LoRA", value=False,
+                    )
+                    ft_lora_rank = gr.Number(
+                        label="LoRA Rank (r)", value=8,
+                        minimum=1, maximum=256, precision=0,
+                    )
+                    ft_lora_alpha = gr.Number(
+                        label="LoRA Alpha", value=16,
+                        minimum=1, maximum=512, precision=0,
+                    )
+                    ft_use_qlora = gr.Checkbox(
+                        label="QLoRA (4-bit, CUDA only)", value=False,
+                    )
 
             # -- Train --
             ft_train_btn = gr.Button(
@@ -1502,6 +1996,10 @@ with gr.Blocks(theme=theme, css=custom_css, title="ConfliBERT") as demo:
                     cmp_epochs = gr.Number(label="Epochs", value=3, minimum=1, precision=0)
                     cmp_batch = gr.Number(label="Batch Size", value=8, minimum=1, precision=0)
                     cmp_lr = gr.Number(label="Learning Rate", value=2e-5, minimum=1e-7)
+                with gr.Row():
+                    cmp_use_lora = gr.Checkbox(label="Use LoRA", value=False)
+                    cmp_lora_rank = gr.Number(label="LoRA Rank", value=8, minimum=1, maximum=256, precision=0)
+                    cmp_lora_alpha = gr.Number(label="LoRA Alpha", value=16, minimum=1, maximum=512, precision=0)
                 cmp_btn = gr.Button("Compare Models", variant="primary")
                 cmp_log = gr.Textbox(
                     label="Comparison Log", lines=8,
@@ -1513,6 +2011,135 @@ with gr.Blocks(theme=theme, css=custom_css, title="ConfliBERT") as demo:
                     )
                     cmp_plot = gr.Plot(label="Metrics Comparison")
                     cmp_roc = gr.Plot(label="ROC Curves")
+
+        # ================================================================
+        # ACTIVE LEARNING TAB
+        # ================================================================
+        with gr.Tab("Active Learning"):
+            gr.Markdown(info_callout(
+                "**Active learning** iteratively selects the most uncertain "
+                "samples from an unlabeled pool for you to label, then retrains. "
+                "This lets you build a strong classifier with far fewer labels."
+            ))
+
+            # -- Data --
+            gr.Markdown("### Data")
+            gr.Markdown(
+                "**Seed file** — small labeled set (TSV, `text[TAB]label`).  \n"
+                "**Pool file** — unlabeled texts (one per line, or CSV with `text` column).  \n"
+                "**Dev file** *(optional)* — held-out labeled set to track metrics."
+            )
+            al_ex_btn = gr.Button(
+                "Load Example: Binary Active Learning",
+                variant="secondary", size="sm",
+            )
+            with gr.Row():
+                al_seed_file = gr.File(
+                    label="Labeled Seed (TSV)",
+                    file_types=[".tsv", ".csv", ".txt"],
+                )
+                al_pool_file = gr.File(
+                    label="Unlabeled Pool",
+                    file_types=[".tsv", ".csv", ".txt"],
+                )
+                al_dev_file = gr.File(
+                    label="Dev / Validation (optional)",
+                    file_types=[".tsv", ".csv", ".txt"],
+                )
+
+            # -- Configuration --
+            gr.Markdown("### Configuration")
+            with gr.Row():
+                al_task = gr.Radio(
+                    ["Binary", "Multiclass"],
+                    label="Task Type", value="Binary",
+                )
+                al_model_dd = gr.Dropdown(
+                    choices=list(FINETUNE_MODELS.keys()),
+                    label="Base Model",
+                    value=list(FINETUNE_MODELS.keys())[0],
+                )
+            with gr.Row():
+                al_strategy = gr.Dropdown(
+                    ["entropy", "margin", "least_confidence"],
+                    label="Query Strategy", value="entropy",
+                )
+                al_query_size = gr.Number(
+                    label="Samples per Round", value=20,
+                    minimum=1, maximum=500, precision=0,
+                )
+            with gr.Row():
+                al_epochs = gr.Number(
+                    label="Epochs per Round", value=3,
+                    minimum=1, maximum=50, precision=0,
+                )
+                al_batch_size = gr.Number(
+                    label="Batch Size", value=8,
+                    minimum=1, maximum=128, precision=0,
+                )
+                al_lr = gr.Number(
+                    label="Learning Rate", value=2e-5,
+                    minimum=1e-7, maximum=1e-2,
+                )
+            with gr.Accordion("Advanced", open=False):
+                with gr.Row():
+                    al_max_len = gr.Number(
+                        label="Max Sequence Length", value=512,
+                        minimum=32, maximum=8192, precision=0,
+                    )
+                    al_use_lora = gr.Checkbox(label="Use LoRA", value=False)
+                    al_lora_rank = gr.Number(
+                        label="LoRA Rank", value=8,
+                        minimum=1, maximum=256, precision=0,
+                    )
+                    al_lora_alpha = gr.Number(
+                        label="LoRA Alpha", value=16,
+                        minimum=1, maximum=512, precision=0,
+                    )
+
+            al_init_btn = gr.Button(
+                "Initialize Active Learning", variant="primary", size="lg",
+            )
+
+            # -- State --
+            al_state = gr.State({})
+            al_model_state = gr.State(None)
+            al_tokenizer_state = gr.State(None)
+
+            with gr.Accordion("Log", open=False):
+                al_log = gr.Textbox(
+                    lines=12, interactive=False, elem_classes="log-output",
+                    show_label=False,
+                )
+
+            # -- Annotation panel (hidden until init) --
+            with gr.Column(visible=False) as al_annotation_col:
+                gr.Markdown("### Label These Samples")
+                gr.Markdown(
+                    "Fill in the **Label** column with integer class labels "
+                    "(e.g. 0 or 1 for binary). Then click **Submit**."
+                )
+                al_annotation_df = gr.Dataframe(
+                    headers=["Text", "Label"],
+                    interactive=True,
+                    wrap=True,
+                    row_count=(1, "dynamic"),
+                )
+                with gr.Row():
+                    al_submit_btn = gr.Button(
+                        "Submit Labels & Next Round",
+                        variant="primary",
+                    )
+
+                al_chart = gr.Plot(label="Metrics Across Rounds")
+
+                gr.Markdown("### Save Model")
+                with gr.Row():
+                    al_save_path = gr.Textbox(
+                        label="Save Directory", value="./al_model",
+                    )
+                    al_save_btn = gr.Button("Save", variant="secondary")
+                    al_save_status = gr.Markdown("")
 
     # ---- FOOTER ----
     gr.Markdown(
@@ -1600,6 +2227,7 @@ with gr.Blocks(theme=theme, css=custom_css, title="ConfliBERT") as demo:
             ft_epochs, ft_batch, ft_lr,
             ft_weight_decay, ft_warmup, ft_max_len,
             ft_grad_accum, ft_fp16, ft_patience, ft_scheduler,
+            ft_use_lora, ft_lora_rank, ft_lora_alpha, ft_use_qlora,
         ],
         outputs=[
             ft_log, ft_metrics,
@@ -1630,12 +2258,55 @@ with gr.Blocks(theme=theme, css=custom_css, title="ConfliBERT") as demo:
         outputs=[ft_batch_out],
     )
 
+    # Active Learning: example loader
+    al_ex_btn.click(
+        fn=load_example_active_learning,
+        outputs=[al_seed_file, al_pool_file, al_dev_file, al_task],
+    )
+
+    # Active Learning
+    al_init_btn.click(
+        fn=al_initialize,
+        inputs=[
+            al_seed_file, al_pool_file, al_dev_file,
+            al_task, al_model_dd, al_strategy, al_query_size,
+            al_epochs, al_batch_size, al_lr, al_max_len,
+            al_use_lora, al_lora_rank, al_lora_alpha,
+        ],
+        outputs=[
+            al_state, al_model_state, al_tokenizer_state,
+            al_annotation_df, al_log, al_chart,
+            al_annotation_col,
+        ],
+        concurrency_limit=1,
+    )
+
+    al_submit_btn.click(
+        fn=al_submit_and_continue,
+        inputs=[
+            al_annotation_df, al_state, al_model_state, al_tokenizer_state,
+            al_log,
+        ],
+        outputs=[
+            al_state, al_model_state, al_tokenizer_state,
+            al_annotation_df, al_log, al_chart,
+        ],
+        concurrency_limit=1,
+    )
+
+    al_save_btn.click(
+        fn=al_save_model,
+        inputs=[al_save_path, al_model_state, al_tokenizer_state],
+        outputs=[al_save_status],
+    )
+
     # Model comparison
     cmp_btn.click(
         fn=run_comparison,
         inputs=[
             ft_train_file, ft_dev_file, ft_test_file,
             ft_task, cmp_models, cmp_epochs, cmp_batch, cmp_lr,
+            cmp_use_lora, cmp_lora_rank, cmp_lora_alpha,
         ],
         outputs=[cmp_log, cmp_table, cmp_plot, cmp_roc, cmp_results_col],
         concurrency_limit=1,

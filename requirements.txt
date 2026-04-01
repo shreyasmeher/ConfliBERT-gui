@@ -10,3 +10,5 @@ accelerate
 scikit-learn
 pandas
 plotly
+peft>=0.6
+bitsandbytes

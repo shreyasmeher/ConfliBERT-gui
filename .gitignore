@@ -6,6 +6,8 @@ env/
 __pycache__/
 *.pyc
 conflibertR/
+conflibertr/
+al_model/
 screenshots/
 finetuned_model/
 ft_output/

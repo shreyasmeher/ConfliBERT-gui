@@ -521,6 +521,28 @@ def process_csv_multilabel(file):
     return out.name
 
 
+def process_csv_qa(file):
+    path = get_path(file)
+    if path is None:
+        return None
+    df = pd.read_csv(path)
+    if 'context' not in df.columns or 'question' not in df.columns:
+        raise ValueError("CSV must contain 'context' and 'question' columns")
+
+    answers = []
+    for _, row in df.iterrows():
+        if pd.isna(row['context']) or pd.isna(row['question']):
+            answers.append("")
+        else:
+            html = question_answering(str(row['context']), str(row['question']))
+            answers.append(re.sub(r'<[^>]+>', '', html).strip())
+    df['answer'] = answers
+
+    out = tempfile.NamedTemporaryFile(suffix='_qa_results.csv', delete=False)
+    df.to_csv(out.name, index=False)
+    return out.name
+
+
 # ============================================================================
 # FINETUNING
 # ============================================================================
@@ -1867,6 +1889,18 @@ with gr.Blocks(theme=theme, css=custom_css, title="ConfliBERT") as demo:
                 with gr.Column():
                     qa_output = gr.HTML(label="Answer")
 
+            with gr.Accordion("Batch Processing (CSV)", open=False):
+                gr.Markdown(
+                    "Upload a CSV file with `context` and `question` columns "
+                    "to process multiple questions at once."
+                )
+                with gr.Row():
+                    qa_csv_in = gr.File(
+                        label="Upload CSV", file_types=[".csv"],
+                    )
+                    qa_csv_out = gr.File(label="Download Results")
+                qa_csv_btn = gr.Button("Process CSV", variant="secondary")
+
         # ================================================================
         # FINE-TUNE TAB
         # ================================================================
@@ -2256,6 +2290,9 @@ with gr.Blocks(theme=theme, css=custom_css, title="ConfliBERT") as demo:
         fn=question_answering,
         inputs=[qa_context, qa_question],
         outputs=[qa_output],
+    )
+    qa_csv_btn.click(
+        fn=process_csv_qa, inputs=[qa_csv_in], outputs=[qa_csv_out],
     )
 
     # Fine-tuning: example dataset loaders
